@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ミャンマー周辺の地震マップ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+  />
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #map { height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    const map = L.map("map").setView([20.0, 96.0], 5); // ミャンマー中央
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+    }).addTo(map);
+
+    const apiUrl =
+      "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&limit=10&orderby=time&minlatitude=8&maxlatitude=30&minlongitude=92&maxlongitude=102&minmagnitude=3.5";
+
+    fetch(apiUrl)
+      .then((res) => res.json())
+      .then((data) => {
+        data.features.forEach((eq) => {
+          const coords = eq.geometry.coordinates;
+          const props = eq.properties;
+
+          const lat = coords[1];
+          const lon = coords[0];
+          const mag = props.mag;
+          const place = props.place;
+          const time = new Date(props.time).toLocaleString("ja-JP");
+
+          const popupText = `
+            <b>📍${place}</b><br/>
+            <b>🕒</b> ${time}<br/>
+            <b>💥 M${mag}</b><br/>
+            <b>📏 深さ:</b> ${coords[2]} km
+          `;
+
+          L.circleMarker([lat, lon], {
+            radius: 5 + mag,
+            color: "red",
+            fillColor: "orange",
+            fillOpacity: 0.7,
+          })
+            .addTo(map)
+            .bindPopup(popupText);
+        });
+      })
+      .catch((err) => {
+        alert("地震データの取得に失敗しました");
+        console.error(err);
+      });
+  </script>
+</body>
+</html>
