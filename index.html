@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>震源地からの地震の広がり表示</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #controls {
+      padding: 10px;
+      background: #f8f8f8;
+      border-bottom: 1px solid #ccc;
+    }
+    #map { height: calc(100vh - 60px); }
+    .leaflet-popup-content { font-size: 14px; }
+    #playButton, #stopButton {
+      padding: 10px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      margin-right: 10px;
+    }
+    #stopButton {
+      background-color: #f44336; /* 赤色 */
+    }
+    #speedControl {
+      margin-top: 10px;
+      font-size: 14px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <label for="start">開始日: </label>
+    <input type="date" id="start" value="2011-03-11" />
+    <label for="end">終了日: </label>
+    <input type="date" id="end" value="2011-03-12" />
+    <button onclick="loadEarthquakes()">地震を表示</button>
+    <button id="playButton" onclick="startPlayback()">再生</button>
+    <button id="stopButton" onclick="stopPlayback()">停止</button>
+
+    <div id="speedControl">
+      <label for="speed">再生スピード: </label>
+      <input type="range" id="speed" min="1" max="10" value="1" step="1">
+      <span id="speedValue">1x</span>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map("map").setView([36.2048, 138.2529], 5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let earthquakeLayer = L.layerGroup().addTo(map);
+    let earthquakeData = [];
+
+    const earthquakeOrigin = {
+      lat: 38.322,
+      lon: 142.369,
+      place: "東日本大震災震源地",
+    };
+
+    function haversine(lon1, lat1, lon2, lat2) {
+      const R = 6371; // 地球半径 (km)
+      const dLat = (lat2 - lat1) * (Math.PI / 180);
+      const dLon = (lon2 - lon1) * (Math.PI / 180);
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c; // キロメートル
+    }
+
+    function getColorByDistance(distance) {
+      if (distance <= 100) return "red";  
+      if (distance <= 300) return "orange";  
+      if (distance <= 500) return "yellow";  
+      return "green";  
+    }
+
+    function canGenerateTsunami(depth, mag) {
+      return depth <= 10 && mag >= 7.0;
+    }
+
+    function addTsunamiImpact(lat, lon, magnitude) {
+      const radius = magnitude * 10; 
+      const tsunamiCircle = L.circle([lat, lon], {
+        color: 'blue',
+        fillColor: 'blue',
+        fillOpacity: 0.3,
+        radius: radius * 1000,
+      }).addTo(map).bindPopup(`津波影響範囲: ${radius} km`);
+
+      setTimeout(() => {
+        tsunamiCircle.setRadius(radius * 1500);
+        tsunamiCircle.setStyle({ fillOpacity: 0.6 });
+      }, 3000);
+    }
+
+    function loadEarthquakes() {
+      earthquakeLayer.clearLayers();
+      earthquakeData = [];
+
+      const start = document.getElementById("start").value;
+      const end = document.getElementById("end").value;
+
+      const startTime = `${start}T05:00:00Z`; 
+      const endTime = `${end}T15:00:00Z`;    
+
+      const apiUrl =
+        "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson" +
+        `&starttime=${startTime}&endtime=${endTime}` +
+        "&minlatitude=24.396308&maxlatitude=45.551483" +
+        "&minlongitude=122.93457&maxlongitude=153.986672" +
+        "&minmagnitude=4.5";
+
+      fetch(apiUrl)
+        .then((res) => res.json())
+        .then((data) => {
+          data.features.forEach((eq) => {
+            const [lon, lat, depth] = eq.geometry.coordinates;
+            const { mag, place, time } = eq.properties;
+            const date = new Date(time).toLocaleString("ja-JP");
+
+            const distance = haversine(
+              earthquakeOrigin.lon,
+              earthquakeOrigin.lat,
+              lon,
+              lat
+            );
+
+            if (canGenerateTsunami(depth, mag)) {
+              addTsunamiImpact(lat, lon, mag);
+            }
+
+            const popupContent = `
+              <b>${place}</b><br/>
+              マグニチュード: ${mag}<br/>
+              距離: ${distance.toFixed(2)} km<br/>
+              時刻: ${date}
+            `;
+
+            const marker = L.circleMarker([lat, lon], {
+              radius: mag * 1.5,
+              color: getColorByDistance(distance),
+              fillColor: getColorByDistance(distance),
+              fillOpacity: 0.6,
+            }).bindPopup(popupContent);
+
+            earthquakeData.push({ marker, time: new Date(time), distance });
+          });
+
+          earthquakeData.sort((a, b) => a.time - b.time); 
+        })
+        .catch(err => {
+          alert("地震データの取得に失敗しました");
+          console.error(err);
+        });
+    }
+
+    let playbackIndex = 0;
+    let playbackInterval;
+    let playbackSpeed = 1000; // 初期の再生速度
+
+    document.getElementById('speed').addEventListener('input', (event) => {
+      const speed = event.target.value;
+      playbackSpeed = 1000 / speed; // スライダーの値に基づいて再生速度を調整
+      document.getElementById('speedValue').innerText = `${speed}x`; // 表示する速度も更新
+    });
+
+    function startPlayback() {
+      if (playbackInterval) {
+        clearInterval(playbackInterval); 
+      }
+      
+      playbackIndex = 0;
+      earthquakeLayer.clearLayers();  
+      playbackInterval = setInterval(() => {
+        if (playbackIndex < earthquakeData.length) {
+          const eq = earthquakeData[playbackIndex];
+          const marker = eq.marker;
+
+          marker.addTo(earthquakeLayer);
+          const color = getColorByDistance(eq.distance);
+          marker.setStyle({
+            color: color,
+            fillColor: color,
+          });
+
+          playbackIndex++;
+        } else {
+          clearInterval(playbackInterval);
+        }
+      }, playbackSpeed); 
+    }
+
+    function stopPlayback() {
+      clearInterval(playbackInterval);
+    }
+
+    loadEarthquakes();
+
+    map.on('click', function(e) {
+      const lat = e.latlng.lat;
+      const lon = e.latlng.lng;
+
+      earthquakeData.forEach((eq) => {
+        const marker = eq.marker;
+        if (marker.getLatLng().equals([lat, lon])) {
+          marker.openPopup();
+        }
+      });
+    });
+  </script>
+</body>
+</html>
