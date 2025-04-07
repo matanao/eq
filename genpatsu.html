@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>福島原発 放射線拡散シミュレーション</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #map { height: 90vh; }
+    #startButton {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      z-index: 1000;
+    }
+    #startButton:hover { background-color: #45a049; }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+  <button id="startButton">シミュレーション開始</button>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // 地図の作成（福島原発付近を中心）
+    const map = L.map("map").setView([37.421, 141.033], 10);  // 福島第一原発の座標（37.421, 141.033）
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // 福島原発にマーカーを追加
+    const reactorLocation = [37.421, 141.033];
+    L.marker(reactorLocation).addTo(map).bindPopup("福島第一原発");
+
+    // 放射線強度の減衰モデル
+    function getRadiationIntensity(distance) {
+      // 距離が遠くなるほど放射線強度は減衰
+      return Math.max(100 / (distance * distance), 0); // ここでは簡易的な距離減衰モデル
+    }
+
+    // 色分け（強い放射線ほど赤、弱い放射線ほど緑）
+    function getRadiationColor(intensity) {
+      if (intensity > 50) return "red";     // 高い放射線
+      if (intensity > 20) return "orange";  // 中くらい
+      return "yellow";                      // 低い放射線
+    }
+
+    let currentHour = 0;
+
+    // 放射線の拡散シミュレーション
+    function drawRadiationSpread() {
+      // 時間経過（例えば1ヶ月のシミュレーション）
+      if (currentHour >= 720) return; // 30日分（24時間 x 30日）
+
+      const distance = 10 + currentHour * 0.1; // 仮定：時間経過とともに拡散範囲が広がる
+      const intensity = getRadiationIntensity(distance);
+      const color = getRadiationColor(intensity);
+
+      // 放射線強度を示す円を地図上に描画
+      L.circleMarker([reactorLocation[0], reactorLocation[1]], {
+        radius: intensity * 0.5, // 放射線強度に基づいたサイズ
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.6
+      })
+      .bindPopup(`<b>${currentHour}時間後</b><br/>放射線強度: ${intensity.toFixed(2)}μSv/h`)
+      .addTo(map);
+
+      // 放射線が円状に広がるようにマーカーを配置
+      for (let i = 0; i < 360; i += 10) {
+        const angle = i * Math.PI / 180; // 角度をラジアンに変換
+        const lat = reactorLocation[0] + (Math.sin(angle) * distance) / 100; // 緯度
+        const lon = reactorLocation[1] + (Math.cos(angle) * distance) / 100; // 経度
+
+        L.circleMarker([lat, lon], {
+          radius: intensity * 0.5, // 放射線強度に基づいたサイズ
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.6
+        })
+        .bindPopup(`<b>${currentHour}時間後</b><br/>放射線強度: ${intensity.toFixed(2)}μSv/h`)
+        .addTo(map);
+      }
+
+      currentHour++;
+      setTimeout(drawRadiationSpread, 1000); // 1秒ごとに次のデータを描画
+    }
+
+    // 開始ボタンでシミュレーション開始
+    document.getElementById("startButton").addEventListener("click", function() {
+      drawRadiationSpread();
+      this.disabled = true; // ボタンを無効にする
+    });
+  </script>
+
+</body>
+</html>
